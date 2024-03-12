@@ -80,7 +80,7 @@ public class FluidSimulation : MonoBehaviour
 
 		// Длина стороны куба
 		int cubeLength = (int)Math.Ceiling(Math.Pow(numParticles, 1.0f / 3.0f)); 
-		var spaceBetweenParticles = _particleSize.x * 2.0f + spacing;
+		var spaceBetweenParticles = _particleSize.x / 2 + spacing;
 
 		for (int i = 0; i < numParticles; i++)
 		{
