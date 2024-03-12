@@ -36,7 +36,7 @@ public class CameraRotation : MonoBehaviour
         transform.position = transform.localRotation * offset + target.position;
         transform.LookAt(target);*/
 
-        if (!Input.GetMouseButton(2)) return;
+        if (!Input.GetMouseButton(1)) return;
         
         _localRot.x += Input.GetAxis("Mouse X") * sensitivity;
         _localRot.y -= Input.GetAxis("Mouse Y") * sensitivity;

@@ -1,6 +1,8 @@
 using System;
 using System.Threading.Tasks;
+using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Serialization;
 using Quaternion = UnityEngine.Quaternion;
 using Random = System.Random;
 using Vector3 = UnityEngine.Vector3;
@@ -8,9 +10,15 @@ using Vector3 = UnityEngine.Vector3;
 public class FluidSimulation : MonoBehaviour
 {
 	[Header("General Settings")]
-	[SerializeField] private Vector3 boxSize = new(2.0f, 1.0f, 1.0f);
 	[SerializeField] private int numParticles = 5;
 	[SerializeField] private float spacing = 1.0f;
+	
+	[Header("Box Settings")]
+	[SerializeField] private Material boxMaterial;
+	[Range(0, 5)] [SerializeField] private float boxScaleX = 2;
+	[Range(0, 5)] [SerializeField] private float boxScaleY = 1;
+	[Range(0, 5)] [SerializeField] private float boxScaleZ = 2;
+	//[SerializeField] private Vector3 boxScale = new(2.0f, 1.0f, 1.0f);
 	
 	[Header("Simulation Settings")]
 	[Range(0, 1)] [SerializeField] private float collisionDumping = 0.95f;
@@ -32,6 +40,7 @@ public class FluidSimulation : MonoBehaviour
 
 	private void Start()
 	{
+		DrawBox();
 		SpawnParticles();
 	}
 
@@ -40,31 +49,48 @@ public class FluidSimulation : MonoBehaviour
 		SimulationStep(Time.deltaTime);
 		DrawParticles();
 	}
-	
-	/// <summary>
-	/// Performs simulation step every frame.
-	/// </summary>
-	/// <param name="deltaTime"></param>
-	private void SimulationStep(float deltaTime)
-	{
-		Parallel.For(0, numParticles, i =>
-		{
-			velocities[i] += Vector3.down * (gravity * deltaTime);
-			densities[i] = CalculateDensity(positions[i]);
-		});
-		
-		Parallel.For(0, numParticles, i =>
-		{
-			Vector3 pressureForce = CalculatePressureForce(i);
-			Vector3 pressureAcceleration = pressureForce / densities[i];
-			velocities[i] += pressureAcceleration * deltaTime;
-		});
 
-		Parallel.For(0, numParticles, i =>
-		{
-			positions[i] += velocities[i] * deltaTime;
-			(positions[i], velocities[i]) = ResolveCollisions(positions[i], velocities[i]);
-		});
+	private void DrawBox()
+	{
+		Vector3 boxScale = new Vector3(boxScaleX, boxScaleY, boxScaleZ);
+		
+		// Floor
+		GameObject floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
+		floor.GetComponent<Renderer>().material = boxMaterial;
+		floor.transform.position = new Vector3(0, -boxScale.y * 5, 0);
+		floor.transform.localScale = boxScale;
+		
+		// Walls
+		GameObject wall1 = GameObject.CreatePrimitive(PrimitiveType.Plane);
+		wall1.GetComponent<Renderer>().material = boxMaterial;
+		wall1.transform.position = new Vector3(0, 0, boxScale.x * 5);
+		wall1.transform.localScale = new Vector3(boxScale.x, 1, boxScale.y);;
+		wall1.transform.rotation = Quaternion.Euler(90, 180, 0);
+		
+		GameObject wall2 = GameObject.CreatePrimitive(PrimitiveType.Plane);
+		wall2.GetComponent<Renderer>().material = boxMaterial;
+		wall2.transform.position = new Vector3(0, 0, -boxScale.x * 5);
+		wall2.transform.localScale = new Vector3(boxScale.x, 1, boxScale.y);
+		wall2.transform.rotation = Quaternion.Euler(90, 0, 0);
+		
+		GameObject wall3 = GameObject.CreatePrimitive(PrimitiveType.Plane);
+		wall3.GetComponent<Renderer>().material = boxMaterial;
+		wall3.transform.position = new Vector3(boxScale.x * 5, 0, 0);
+		wall3.transform.localScale =  new Vector3(boxScale.x, 1, boxScale.y);;
+		wall3.transform.rotation = Quaternion.Euler(90, 270, 0);
+		
+		GameObject wall4 = GameObject.CreatePrimitive(PrimitiveType.Plane);
+		wall4.GetComponent<Renderer>().material = boxMaterial;
+		wall4.transform.position = new Vector3(-boxScale.x * 5, 0, 0);
+		wall4.transform.localScale =  new Vector3(boxScale.x, 1, boxScale.y);;
+		wall4.transform.rotation = Quaternion.Euler(90, 90, 0);
+		
+		// Ceiling
+		GameObject ceiling = GameObject.CreatePrimitive(PrimitiveType.Plane);
+		ceiling.GetComponent<Renderer>().material = boxMaterial;
+		ceiling.transform.position = new Vector3(0, boxScale.y * 5, 0);
+		ceiling.transform.localScale = boxScale;
+		ceiling.transform.rotation = Quaternion.Euler(0, 0, 180);
 	}
 	
 	/// <summary>
@@ -95,6 +121,32 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
+	/// Performs simulation step every frame.
+	/// </summary>
+	/// <param name="deltaTime"></param>
+	private void SimulationStep(float deltaTime)
+	{
+		Parallel.For(0, numParticles, i =>
+		{
+			velocities[i] += Vector3.down * (gravity * deltaTime);
+			densities[i] = CalculateDensity(positions[i]);
+		});
+		
+		Parallel.For(0, numParticles, i =>
+		{
+			Vector3 pressureForce = CalculatePressureForce(i);
+			Vector3 pressureAcceleration = pressureForce / densities[i];
+			velocities[i] += pressureAcceleration * deltaTime;
+		});
+
+		Parallel.For(0, numParticles, i =>
+		{
+			positions[i] += velocities[i] * deltaTime;
+			(positions[i], velocities[i]) = ResolveCollisions(positions[i], velocities[i]);
+		});
+	}
+	
+	/// <summary>
 	/// Draws particles every frame.
 	/// </summary>
 	private void DrawParticles()
@@ -114,7 +166,7 @@ public class FluidSimulation : MonoBehaviour
 	private (Vector3, Vector3) ResolveCollisions(Vector3 position, Vector3 velocity)
 	{
 		var radius = _particleSize / 2;
-		Vector3 halfBoxSize = boxSize / 2 * 10 - radius;
+		Vector3 halfBoxSize = new Vector3(boxScaleX, boxScaleY, boxScaleZ) / 2 * 10 - radius;
 
 		for (int i = 0; i < numParticles; i++)
 		{
