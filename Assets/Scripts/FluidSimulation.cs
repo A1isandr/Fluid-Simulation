@@ -2,10 +2,12 @@ using System;
 using System.Threading.Tasks;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.Serialization;
 using Quaternion = UnityEngine.Quaternion;
 using Random = System.Random;
 using Vector3 = UnityEngine.Vector3;
+
 
 public class FluidSimulation : MonoBehaviour
 {
@@ -35,8 +37,12 @@ public class FluidSimulation : MonoBehaviour
 	[SerializeField] private GameObject[] particles;
 	[SerializeField] private Vector3[] velocities;
 	[SerializeField] private Vector3[] positions;
+	[SerializeField] private Vector3[] predictedPositions;
 	[SerializeField] private float[] densities;
-	private Vector3 _particleSize;
+	
+	private Vector3 _particleScale;
+	private float _particleRadius;
+	private NeighbourSearch _neighbourSearch;
 
 	private void Start()
 	{
@@ -49,7 +55,10 @@ public class FluidSimulation : MonoBehaviour
 		SimulationStep(Time.deltaTime);
 		DrawParticles();
 	}
-
+	
+	/// <summary>
+	/// Draws a box for liquid simulation.
+	/// </summary>
 	private void DrawBox()
 	{
 		Vector3 boxScale = new Vector3(boxScaleX, boxScaleY, boxScaleZ);
@@ -101,12 +110,16 @@ public class FluidSimulation : MonoBehaviour
 		particles = new GameObject[numParticles];
 		velocities = new Vector3[numParticles];
 		positions = new Vector3[numParticles];
+		predictedPositions = new Vector3[numParticles];
 		densities = new float[numParticles];
-		_particleSize = particlePrefab.transform.lossyScale;
+		
+		_particleScale = particlePrefab.transform.lossyScale;
+		_particleRadius = _particleScale.x / 2;
+		_neighbourSearch = new NeighbourSearch(numParticles);
 
-		// Длина стороны куба
+		// Cube side length.
 		int cubeLength = (int)Math.Ceiling(Math.Pow(numParticles, 1.0f / 3.0f)); 
-		var spaceBetweenParticles = _particleSize.x / 2 + spacing;
+		var spaceBetweenParticles = _particleRadius + spacing;
 
 		for (int i = 0; i < numParticles; i++)
 		{
@@ -115,7 +128,7 @@ public class FluidSimulation : MonoBehaviour
 			float z = (i / (cubeLength * cubeLength) - cubeLength / 2f) * spaceBetweenParticles;
 
 			positions[i] = new Vector3(x, y, z) + spawnPoint.position;
-			densities[i] = CalculateDensity(positions[i]);
+			//densities[i] = CalculateDensity(positions[i]);
 			particles[i] = Instantiate(particlePrefab, positions[i], Quaternion.identity);
 		};
 	}
@@ -126,19 +139,31 @@ public class FluidSimulation : MonoBehaviour
 	/// <param name="deltaTime"></param>
 	private void SimulationStep(float deltaTime)
 	{
+		// Apply gravity and predict next positions.
 		Parallel.For(0, numParticles, i =>
 		{
 			velocities[i] += Vector3.down * (gravity * deltaTime);
-			densities[i] = CalculateDensity(positions[i]);
+			predictedPositions[i] = positions[i] + velocities[i] * deltaTime;
 		});
 		
+		// Update spatial lookup with predicted positions;
+		_neighbourSearch.UpdateSpatialLookup(predictedPositions, smoothingRadius);
+		
+		// Calculate densities.
+		Parallel.For(0, numParticles, i =>
+		{
+			densities[i] = CalculateDensity(predictedPositions[i]);
+		});
+		
+		// Calculate and apply pressure forces.
 		Parallel.For(0, numParticles, i =>
 		{
 			Vector3 pressureForce = CalculatePressureForce(i);
 			Vector3 pressureAcceleration = pressureForce / densities[i];
 			velocities[i] += pressureAcceleration * deltaTime;
 		});
-
+		
+		// Calculate new positions of the particles and resolve collisions.
 		Parallel.For(0, numParticles, i =>
 		{
 			positions[i] += velocities[i] * deltaTime;
@@ -147,7 +172,7 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// Draws particles every frame.
+	/// Applies new positions to the particles.
 	/// </summary>
 	private void DrawParticles()
 	{
@@ -158,14 +183,14 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// Resolves particle collision with boundaries.
+	/// Resolves particle collision with boundaries of the box.
 	/// </summary>
 	/// <param name="position"></param>
 	/// <param name="velocity"></param>
 	/// <returns>New position and velocity of a particle.</returns>
 	private (Vector3, Vector3) ResolveCollisions(Vector3 position, Vector3 velocity)
 	{
-		var radius = _particleSize / 2;
+		var radius = _particleScale / 2;
 		Vector3 halfBoxSize = new Vector3(boxScaleX, boxScaleY, boxScaleZ) / 2 * 10 - radius;
 
 		for (int i = 0; i < numParticles; i++)
@@ -218,11 +243,12 @@ public class FluidSimulation : MonoBehaviour
 		if (dst >= radius) return 0;
 		
 		float scale = 12 / (MathF.Pow(radius, 4) * MathF.PI);
+		
 		return (dst - radius) * scale;
 	}
 	
 	/// <summary>
-	/// Calculates density in given point in space.
+	/// Calculates density at given point in space.
 	/// </summary>
 	/// <param name="samplePoint"></param>
 	/// <returns>Density</returns>
@@ -230,9 +256,9 @@ public class FluidSimulation : MonoBehaviour
 	{
 		float density = 0;
 
-		for (int i = 0; i < numParticles; i++)
+		foreach (var index in _neighbourSearch.ForeachPointWithinRadius(samplePoint))
 		{
-			float dst = (positions[i] - samplePoint).magnitude;
+			float dst = (positions[index] - samplePoint).magnitude;
 			float influence = SmoothingKernel(smoothingRadius, dst);
 			density += mass * influence;
 		}
@@ -267,7 +293,7 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// Converts density to pressure on point in space.
+	/// Converts density to pressure at point in space.
 	/// </summary>
 	/// <param name="density"></param>
 	/// <returns>Pressure</returns>
@@ -302,20 +328,14 @@ public class FluidSimulation : MonoBehaviour
 		var rng = new Random();
 		var value = rng.NextDouble();
 
-		switch (value)
+		return value switch
 		{
-			case <= 1 / 6.0f:
-				return Vector3.down;
-			case <= 1 / 5.0f:
-				return Vector3.up;
-			case <= 1 / 4.0f:
-				return Vector3.left;
-			case <= 1 / 3.0f:
-				return Vector3.right;
-			case <= 1 / 2.0f:
-				return Vector3.back;
-			default:
-				return Vector3.forward;
-		}
+			<= 1 / 6.0f => Vector3.down,
+			<= 1 / 5.0f => Vector3.up,
+			<= 1 / 4.0f => Vector3.left,
+			<= 1 / 3.0f => Vector3.right,
+			<= 1 / 2.0f => Vector3.back,
+			_ => Vector3.forward
+		};
 	}
 }
