@@ -13,131 +13,93 @@ public class FluidSimulation : MonoBehaviour
 {
 	[Header("General Settings")]
 	[SerializeField] private int numParticles = 5;
-	[SerializeField] private float spacing = 1.0f;
-	
-	[Header("Box Settings")]
-	[SerializeField] private Material boxMaterial;
-	[Range(0, 5)] [SerializeField] private float boxScaleX = 2;
-	[Range(0, 5)] [SerializeField] private float boxScaleY = 1;
-	[Range(0, 5)] [SerializeField] private float boxScaleZ = 2;
-	//[SerializeField] private Vector3 boxScale = new(2.0f, 1.0f, 1.0f);
 	
 	[Header("Simulation Settings")]
-	[Range(0, 1)] [SerializeField] private float collisionDumping = 0.95f;
+	[SerializeField] private float timeScale = 1;
+	[SerializeField] private bool fixedTimeStep;
+	[SerializeField] private int iterationsPerFrame = 2;
 	[SerializeField] private float gravity = 9.81f;
-	[SerializeField] private float smoothingRadius = 0.5f;
+	[SerializeField] private float smoothingRadius = 0.2f;
 	[SerializeField] private float targetDensity = 1f;
 	[SerializeField] private float pressureMultiplier = 1f;
 	[SerializeField] private float mass = 1f;
+	[Range(0, 1)] [SerializeField] private float collisionDamping = 0.95f;
 	
 	[Header("References")]
 	[SerializeField] private Transform spawnPoint;
 	[SerializeField] private GameObject particlePrefab;
 
+	[Header("Debug")]
+	[SerializeField] private bool displayNeighbourSearchGrid;
+	[SerializeField] private bool displaySmoothingRadius;
+	
+	[Header("Debug Info")]
 	[SerializeField] private GameObject[] particles;
 	[SerializeField] private Vector3[] velocities;
 	[SerializeField] private Vector3[] positions;
 	[SerializeField] private Vector3[] predictedPositions;
 	[SerializeField] private float[] densities;
 	
-	private Vector3 _particleScale;
-	private float _particleRadius;
 	private NeighbourSearch _neighbourSearch;
+	
+	// State.
+	private bool isPaused;
+	private bool pauseNextFrame;
 
 	private void Start()
 	{
-		DrawBox();
+		float deltaTime = 1 / 60f;
+		Time.fixedDeltaTime = deltaTime;
+		
 		SpawnParticles();
 	}
-
+	
+	void FixedUpdate()
+	{
+		// Run simulation if in fixed time step mode.
+		if (fixedTimeStep)
+		{
+			RunSimulationFrame(Time.fixedDeltaTime);
+		}
+	}
+	
 	private void Update()
 	{
-		SimulationStep(Time.deltaTime);
-		DrawParticles();
-	}
-	
-	/// <summary>
-	/// Draws a box for liquid simulation.
-	/// </summary>
-	private void DrawBox()
-	{
-		Vector3 boxScale = new Vector3(boxScaleX, boxScaleY, boxScaleZ);
-		
-		// Floor
-		GameObject floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
-		floor.GetComponent<Renderer>().material = boxMaterial;
-		floor.transform.position = new Vector3(0, -boxScale.y * 5, 0);
-		floor.transform.localScale = boxScale;
-		
-		// Walls
-		GameObject wall1 = GameObject.CreatePrimitive(PrimitiveType.Plane);
-		wall1.GetComponent<Renderer>().material = boxMaterial;
-		wall1.transform.position = new Vector3(0, 0, boxScale.x * 5);
-		wall1.transform.localScale = new Vector3(boxScale.x, 1, boxScale.y);;
-		wall1.transform.rotation = Quaternion.Euler(90, 180, 0);
-		
-		GameObject wall2 = GameObject.CreatePrimitive(PrimitiveType.Plane);
-		wall2.GetComponent<Renderer>().material = boxMaterial;
-		wall2.transform.position = new Vector3(0, 0, -boxScale.x * 5);
-		wall2.transform.localScale = new Vector3(boxScale.x, 1, boxScale.y);
-		wall2.transform.rotation = Quaternion.Euler(90, 0, 0);
-		
-		GameObject wall3 = GameObject.CreatePrimitive(PrimitiveType.Plane);
-		wall3.GetComponent<Renderer>().material = boxMaterial;
-		wall3.transform.position = new Vector3(boxScale.x * 5, 0, 0);
-		wall3.transform.localScale =  new Vector3(boxScale.x, 1, boxScale.y);;
-		wall3.transform.rotation = Quaternion.Euler(90, 270, 0);
-		
-		GameObject wall4 = GameObject.CreatePrimitive(PrimitiveType.Plane);
-		wall4.GetComponent<Renderer>().material = boxMaterial;
-		wall4.transform.position = new Vector3(-boxScale.x * 5, 0, 0);
-		wall4.transform.localScale =  new Vector3(boxScale.x, 1, boxScale.y);;
-		wall4.transform.rotation = Quaternion.Euler(90, 90, 0);
-		
-		// Ceiling
-		GameObject ceiling = GameObject.CreatePrimitive(PrimitiveType.Plane);
-		ceiling.GetComponent<Renderer>().material = boxMaterial;
-		ceiling.transform.position = new Vector3(0, boxScale.y * 5, 0);
-		ceiling.transform.localScale = boxScale;
-		ceiling.transform.rotation = Quaternion.Euler(0, 0, 180);
-	}
-	
-	/// <summary>
-	/// Spawns particles.
-	/// </summary>
-	private void SpawnParticles()
-	{
-		particles = new GameObject[numParticles];
-		velocities = new Vector3[numParticles];
-		positions = new Vector3[numParticles];
-		predictedPositions = new Vector3[numParticles];
-		densities = new float[numParticles];
-		
-		_particleScale = particlePrefab.transform.lossyScale;
-		_particleRadius = _particleScale.x / 2;
-		_neighbourSearch = new NeighbourSearch(numParticles);
-
-		// Cube side length.
-		int cubeLength = (int)Math.Ceiling(Math.Pow(numParticles, 1.0f / 3.0f)); 
-		var spaceBetweenParticles = _particleRadius + spacing;
-
-		for (int i = 0; i < numParticles; i++)
+		// Run simulation if not in fixed timestep mode.
+		// (skip running for first few frames as timestep can be a lot higher than usual).
+		if (!fixedTimeStep && Time.frameCount > 10)
 		{
-			float x = (i % cubeLength - cubeLength / 2f) * spaceBetweenParticles;
-			float y = ((i / cubeLength) % cubeLength - cubeLength / 2f) * spaceBetweenParticles;
-			float z = (i / (cubeLength * cubeLength) - cubeLength / 2f) * spaceBetweenParticles;
+			RunSimulationFrame(Time.deltaTime);
+		}
 
-			positions[i] = new Vector3(x, y, z) + spawnPoint.position;
-			//densities[i] = CalculateDensity(positions[i]);
-			particles[i] = Instantiate(particlePrefab, positions[i], Quaternion.identity);
-		};
+		if (pauseNextFrame)
+		{
+			isPaused = true;
+			pauseNextFrame = false;
+		}
+
+		HandleInput();
+	}
+	
+	void RunSimulationFrame(float frameTime)
+	{
+		if (!isPaused)
+		{
+			float timeStep = frameTime / iterationsPerFrame * timeScale;
+
+			for (int i = 0; i < iterationsPerFrame; i++)
+			{
+				RunSimulationStep(timeStep);
+				DrawParticles();
+			}
+		}
 	}
 	
 	/// <summary>
 	/// Performs simulation step every frame.
 	/// </summary>
 	/// <param name="deltaTime"></param>
-	private void SimulationStep(float deltaTime)
+	private void RunSimulationStep(float deltaTime)
 	{
 		// Apply gravity and predict next positions.
 		Parallel.For(0, numParticles, i =>
@@ -167,8 +129,41 @@ public class FluidSimulation : MonoBehaviour
 		Parallel.For(0, numParticles, i =>
 		{
 			positions[i] += velocities[i] * deltaTime;
-			(positions[i], velocities[i]) = ResolveCollisions(positions[i], velocities[i]);
 		});
+		
+		for (int i = 0; i < numParticles; i++)
+		{
+			ResolveCollisions(i);
+		}
+	}
+	
+	/// <summary>
+	/// Spawns particles.
+	/// </summary>
+	private void SpawnParticles()
+	{
+		particles = new GameObject[numParticles];
+		velocities = new Vector3[numParticles];
+		positions = new Vector3[numParticles];
+		predictedPositions = new Vector3[numParticles];
+		densities = new float[numParticles];
+		
+		_neighbourSearch = new NeighbourSearch(numParticles);
+		
+		const float particleRadius = 0.5f;
+		
+		int cubeLength = (int)Math.Ceiling(Math.Pow(numParticles, 1.0f / 3.0f)); 
+		float spaceBetweenParticles = particleRadius + 1.0f;
+
+		for (int i = 0; i < numParticles; i++)
+		{
+			float x = (i % cubeLength - cubeLength / 2f) * spaceBetweenParticles;
+			float y = ((i / cubeLength) % cubeLength - cubeLength / 2f) * spaceBetweenParticles;
+			float z = (i / (cubeLength * cubeLength) - cubeLength / 2f) * spaceBetweenParticles;
+
+			positions[i] = new Vector3(x, y, z) + spawnPoint.position;
+			particles[i] = Instantiate(particlePrefab, positions[i], Quaternion.identity);
+		};
 	}
 	
 	/// <summary>
@@ -182,50 +177,72 @@ public class FluidSimulation : MonoBehaviour
 		}
 	}
 	
+	void HandleInput()
+	{
+		// Pause.
+		if (Input.GetKeyDown(KeyCode.Space))
+		{
+			isPaused = !isPaused;
+		}
+		
+		// Pause next frame.
+		if (Input.GetKeyDown(KeyCode.RightArrow))
+		{
+			isPaused = false;
+			pauseNextFrame = true;
+		}
+
+		// Reset simulation.
+		if (Input.GetKeyDown(KeyCode.R))
+		{
+			isPaused = true;
+		}
+	}
+
 	/// <summary>
 	/// Resolves particle collision with boundaries of the box.
 	/// </summary>
-	/// <param name="position"></param>
-	/// <param name="velocity"></param>
-	/// <returns>New position and velocity of a particle.</returns>
-	private (Vector3, Vector3) ResolveCollisions(Vector3 position, Vector3 velocity)
+	/// <param name="particleIndex"></param>
+	private void ResolveCollisions(int particleIndex)
 	{
-		var radius = _particleScale / 2;
-		Vector3 halfBoxSize = new Vector3(boxScaleX, boxScaleY, boxScaleZ) / 2 * 10 - radius;
+		Vector3 posLocal = transform.InverseTransformPoint(positions[particleIndex]);
+		Vector3 velocityLocal = transform.InverseTransformPoint(velocities[particleIndex]);
 
-		for (int i = 0; i < numParticles; i++)
+		// Calculate distance from box on each axis (negative values are inside box)
+		Vector3 halfSize = new Vector3(0.5f, 0.5f, 0.5f);
+		Vector3 edgeDst = halfSize - new Vector3(Mathf.Abs(posLocal.x), Mathf.Abs(posLocal.y), Mathf.Abs(posLocal.z));
+
+		// Resolve collisions
+		if (edgeDst.x <= 0)
 		{
-			if (Math.Abs(position.x) > halfBoxSize.x)
-			{
-				position.x = halfBoxSize.x * Math.Sign(position.x);
-				velocity.x *= -1 * collisionDumping;
-			}
-			
-			if (Math.Abs(position.y) > halfBoxSize.y)
-			{
-				position.y = halfBoxSize.y * Math.Sign(position.y);
-				velocity.y *= -1 * collisionDumping;
-			}
-
-			if (Math.Abs(position.z) > halfBoxSize.z)
-			{
-				position.z = halfBoxSize.z * Math.Sign(position.z);
-				velocity.z *= -1 * collisionDumping;
-			}
+			posLocal.x = halfSize.x * Mathf.Sign(posLocal.x);
+			velocityLocal.x *= -1 * collisionDamping;
+		}
+		if (edgeDst.y <= 0)
+		{
+			posLocal.y = halfSize.y * Mathf.Sign(posLocal.y);
+			velocityLocal.y *= -1 * collisionDamping;
+		}
+		if (edgeDst.z <= 0)
+		{
+			posLocal.z = halfSize.z * Mathf.Sign(posLocal.z);
+			velocityLocal.z *= -1 * collisionDamping;
 		}
 
-		return (position, velocity);
+		// Transform resolved position/velocity back to world space
+		positions[particleIndex] = transform.TransformPoint(posLocal);
+		velocities[particleIndex] = transform.TransformPoint(velocityLocal);
 	}
 	
 	/// <summary>
-	/// 
+	/// Smoothing kernel.
 	/// </summary>
 	/// <param name="radius"></param>
 	/// <param name="dst"></param>
 	/// <returns></returns>
-	private float SmoothingKernel(float radius, float dst)
+	private float SmoothingKernel(float dst, float radius)
 	{
-		if (dst >= radius) return 0;
+		//if (dst > radius) return 0;
 		
 		float volume = (MathF.PI * MathF.Pow(radius, 4)) / 6;
 		
@@ -233,7 +250,7 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// 
+	/// Smoothing kernel derivative.
 	/// </summary>
 	/// <param name="dst"></param>
 	/// <param name="radius"></param>
@@ -259,10 +276,10 @@ public class FluidSimulation : MonoBehaviour
 		foreach (var index in _neighbourSearch.ForeachPointWithinRadius(samplePoint))
 		{
 			float dst = (positions[index] - samplePoint).magnitude;
-			float influence = SmoothingKernel(smoothingRadius, dst);
+			float influence = SmoothingKernel(dst, smoothingRadius);
 			density += mass * influence;
 		}
-
+		
 		return density;
 	}
 	
@@ -275,20 +292,20 @@ public class FluidSimulation : MonoBehaviour
 	{
 		Vector3 pressureForce = Vector3.zero;
 		
-		for (int i = 0; i < numParticles; i++)
+		foreach (var index in _neighbourSearch.ForeachPointWithinRadius(positions[particleIndex]))
 		{
-			if (particleIndex == i) continue;
+			if (particleIndex == index) continue;
 			
-			Vector3 offset = positions[i] - positions[particleIndex];
+			Vector3 offset = positions[index] - positions[particleIndex];
 			float dst = offset.magnitude;
 			Vector3 dir = dst == 0 ? GetRandomDir() : offset / dst;
 			
-			float slope = SmoothingKernelDerivative(smoothingRadius, dst);
-			float density = densities[i];
+			float slope = SmoothingKernelDerivative(dst, smoothingRadius);
+			float density = densities[index];
 			float sharedPressure = CalculateSharedPressure(density, densities[particleIndex]);
 			pressureForce += dir * (sharedPressure * slope * mass) / density;
 		}
-
+		
 		return pressureForce;
 	}
 	
@@ -322,7 +339,7 @@ public class FluidSimulation : MonoBehaviour
 	/// <summary>
 	/// Chooses random direction for particle.
 	/// </summary>
-	/// <returns>Random direction</returns>
+	/// <returns>Random direction.</returns>
 	private static Vector3 GetRandomDir()
 	{
 		var rng = new Random();
@@ -337,5 +354,33 @@ public class FluidSimulation : MonoBehaviour
 			<= 1 / 2.0f => Vector3.back,
 			_ => Vector3.forward
 		};
+	}
+
+	private void OnDrawGizmos()
+	{
+		// Draw box boundaries.
+		var m = Gizmos.matrix;
+		Gizmos.matrix = transform.localToWorldMatrix;
+		Gizmos.color = new Color(0, 1, 0, 0.5f);
+		Gizmos.DrawWireCube(Vector3.zero, Vector3.one);
+		Gizmos.matrix = m;
+		
+		if (_neighbourSearch is null) return;
+		
+		// Draw neighbour search cells and smoothing radius.
+		for (int i = 0; i < numParticles; i++)
+		{
+			if (displayNeighbourSearchGrid)
+			{
+				Gizmos.color = Color.yellow;
+				Gizmos.DrawWireCube(_neighbourSearch.cellsCoord[i], new Vector3(smoothingRadius, smoothingRadius, smoothingRadius));
+			}
+
+			if (displaySmoothingRadius)
+			{
+				Gizmos.color = Color.red;
+				Gizmos.DrawWireSphere(positions[i], smoothingRadius);
+			}
+		}
 	}
 }

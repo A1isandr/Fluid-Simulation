@@ -2,11 +2,14 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Unity.VisualScripting;
 using UnityEngine;
 
 
 public class NeighbourSearch
 {
+    public readonly Vector3[] cellsCoord;
+
     private Entry[] _spatialLookup;
     private int[] _startIndices;
     private Vector3[] _points;
@@ -44,16 +47,17 @@ public class NeighbourSearch
 
     public NeighbourSearch(int numParticles)
     {
+        cellsCoord = new Vector3[numParticles];
         _spatialLookup = new Entry[numParticles];
         _startIndices = new int[numParticles];
     }
 
     /// <summary>
-    /// Defines entry in a spatial lookup.
+    /// Defines entry in a spatial lookup array.
     /// </summary>
     /// <param name="ParticleIndex"></param>
     /// <param name="CellKey"></param>
-    private record Entry(int ParticleIndex, uint CellKey) : IComparable
+    public record Entry(int ParticleIndex, uint CellKey) : IComparable
     {
         public int CompareTo(object incomingObject)
         {
@@ -64,7 +68,7 @@ public class NeighbourSearch
     }
     
     /// <summary>
-    /// 
+    /// Iterates trough all neighbours of given point in space.
     /// </summary>
     /// <param name="samplePoint"></param>
     public IEnumerable<int> ForeachPointWithinRadius(Vector3 samplePoint)
@@ -83,7 +87,7 @@ public class NeighbourSearch
             for (int i = cellStartIndex; i < _spatialLookup.Length; i++)
             {
                 // Exit loop if we`re no longer looking at the correct cell.
-                if (_spatialLookup[i].CellKey != key) yield break;
+                if (_spatialLookup[i].CellKey != key) break;
 
                 int particleIndex = _spatialLookup[i].ParticleIndex;
                 float sqrDst = (_points[particleIndex] - samplePoint).sqrMagnitude;
@@ -111,6 +115,7 @@ public class NeighbourSearch
         Parallel.For(0, points.Length, i =>
         {
             (int cellX, int cellY, int cellZ) = PositionToCellCoord(points[i], radius);
+            cellsCoord[i] = new Vector3(cellX, cellY, cellZ);
             uint cellKey = GetKeyFromHash(HashCell(cellX, cellY, cellZ));
             _spatialLookup[i] = new Entry(i, cellKey);
             _startIndices[i] = int.MaxValue; // Reset start index.
@@ -133,7 +138,7 @@ public class NeighbourSearch
     }
     
     /// <summary>
-    /// Converts point position to cell coord.
+    /// Converts point position to cell coord it is within.
     /// </summary>
     /// <param name="point"></param>
     /// <param name="radius"></param>
@@ -158,7 +163,7 @@ public class NeighbourSearch
     {
         uint a = (uint)cellX * 15823;
         uint b = (uint)cellY * 9737333;
-        uint c = (uint)cellZ * 15490897;
+        uint c = (uint)cellZ * 440817757;
 
         return a + b + c;
     }
