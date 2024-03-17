@@ -19,9 +19,9 @@ public class FluidSimulation : MonoBehaviour
 	[SerializeField] private bool fixedTimeStep;
 	[SerializeField] private int iterationsPerFrame = 2;
 	[SerializeField] private float gravity = 9.81f;
-	[SerializeField] private float smoothingRadius = 0.2f;
-	[SerializeField] private float targetDensity = 1f;
-	[SerializeField] private float pressureMultiplier = 1f;
+	[SerializeField] private float smoothingRadius = 0.7f;
+	[SerializeField] private float targetDensity = 1.5f;
+	[SerializeField] private float pressureMultiplier = 10f;
 	[SerializeField] private float mass = 1f;
 	[Range(0, 1)] [SerializeField] private float collisionDamping = 0.95f;
 	
@@ -65,8 +65,8 @@ public class FluidSimulation : MonoBehaviour
 	
 	private void Update()
 	{
-		// Run simulation if not in fixed timestep mode.
-		// (skip running for first few frames as timestep can be a lot higher than usual).
+		// Run simulation if not in fixed time step mode.
+		// (skip running for first few frames as time step can be a lot higher than usual).
 		if (!fixedTimeStep && Time.frameCount > 10)
 		{
 			RunSimulationFrame(Time.deltaTime);
@@ -164,6 +164,13 @@ public class FluidSimulation : MonoBehaviour
 			positions[i] = new Vector3(x, y, z) + spawnPoint.position;
 			particles[i] = Instantiate(particlePrefab, positions[i], Quaternion.identity);
 		};
+		
+		_neighbourSearch.UpdateSpatialLookup(positions, smoothingRadius);
+
+		Parallel.For(0, numParticles, i =>
+		{
+			densities[i] = CalculateDensity(positions[i]);
+		});
 	}
 	
 	/// <summary>
@@ -206,7 +213,7 @@ public class FluidSimulation : MonoBehaviour
 	private void ResolveCollisions(int particleIndex)
 	{
 		Vector3 posLocal = transform.InverseTransformPoint(positions[particleIndex]);
-		Vector3 velocityLocal = transform.InverseTransformPoint(velocities[particleIndex]);
+		Vector3 velocityLocal = transform.InverseTransformDirection(velocities[particleIndex]);
 
 		// Calculate distance from box on each axis (negative values are inside box)
 		Vector3 halfSize = new Vector3(0.5f, 0.5f, 0.5f);
@@ -231,7 +238,7 @@ public class FluidSimulation : MonoBehaviour
 
 		// Transform resolved position/velocity back to world space
 		positions[particleIndex] = transform.TransformPoint(posLocal);
-		velocities[particleIndex] = transform.TransformPoint(velocityLocal);
+		velocities[particleIndex] = transform.TransformDirection(velocityLocal);
 	}
 	
 	/// <summary>
@@ -292,7 +299,7 @@ public class FluidSimulation : MonoBehaviour
 	{
 		Vector3 pressureForce = Vector3.zero;
 		
-		foreach (var index in _neighbourSearch.ForeachPointWithinRadius(positions[particleIndex]))
+		foreach (var index in _neighbourSearch.ForeachPointWithinRadius(predictedPositions[particleIndex]))
 		{
 			if (particleIndex == index) continue;
 			

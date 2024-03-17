@@ -319,14 +319,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ae7b5fee7c7be49498597a57bf8992ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  numParticles: 400
+  numParticles: 1500
   timeScale: 1
-  fixedTimeStep: 0
+  fixedTimeStep: 1
   iterationsPerFrame: 1
   gravity: 9.81
-  smoothingRadius: 0.2
+  smoothingRadius: 0.7
   targetDensity: 1.5
-  pressureMultiplier: 0.11
+  pressureMultiplier: 10
   mass: 1
   collisionDamping: 0.5
   spawnPoint: {fileID: 1326973433}
@@ -349,7 +349,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 26.564526, y: 14.251058, z: 27.61299}
+  m_LocalScale: {x: 26.564526, y: 18.446959, z: 72.158264}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1326973433}
