@@ -7,6 +7,7 @@ using UnityEngine.Serialization;
 using Quaternion = UnityEngine.Quaternion;
 using Random = System.Random;
 using Vector3 = UnityEngine.Vector3;
+using static UnityEngine.Mathf;
 
 
 public class FluidSimulation : MonoBehaviour
@@ -19,9 +20,10 @@ public class FluidSimulation : MonoBehaviour
 	[SerializeField] private bool fixedTimeStep;
 	[SerializeField] private int iterationsPerFrame = 2;
 	[SerializeField] private float gravity = 9.81f;
-	[SerializeField] private float smoothingRadius = 0.7f;
-	[SerializeField] private float targetDensity = 1.5f;
-	[SerializeField] private float pressureMultiplier = 10f;
+	[SerializeField] private float smoothingRadius = 0.5f;
+	[SerializeField] private float targetDensity = 5f;
+	[SerializeField] private float pressureMultiplier = 30f;
+	[SerializeField] private float viscosityStrength = 0.5f;
 	[SerializeField] private float mass = 1f;
 	[Range(0, 1)] [SerializeField] private float collisionDamping = 0.95f;
 	
@@ -43,8 +45,8 @@ public class FluidSimulation : MonoBehaviour
 	private NeighbourSearch _neighbourSearch;
 	
 	// State.
-	private bool isPaused;
-	private bool pauseNextFrame;
+	private bool _isPaused;
+	private bool _pauseNextFrame;
 
 	private void Start()
 	{
@@ -67,15 +69,15 @@ public class FluidSimulation : MonoBehaviour
 	{
 		// Run simulation if not in fixed time step mode.
 		// (skip running for first few frames as time step can be a lot higher than usual).
-		if (!fixedTimeStep && Time.frameCount > 10)
+		if (!fixedTimeStep)
 		{
 			RunSimulationFrame(Time.deltaTime);
 		}
 
-		if (pauseNextFrame)
+		if (_pauseNextFrame)
 		{
-			isPaused = true;
-			pauseNextFrame = false;
+			_isPaused = true;
+			_pauseNextFrame = false;
 		}
 
 		HandleInput();
@@ -83,7 +85,7 @@ public class FluidSimulation : MonoBehaviour
 	
 	void RunSimulationFrame(float frameTime)
 	{
-		if (!isPaused)
+		if (!_isPaused)
 		{
 			float timeStep = frameTime / iterationsPerFrame * timeScale;
 
@@ -105,7 +107,7 @@ public class FluidSimulation : MonoBehaviour
 		Parallel.For(0, numParticles, i =>
 		{
 			velocities[i] += Vector3.down * (gravity * deltaTime);
-			predictedPositions[i] = positions[i] + velocities[i] * deltaTime;
+			predictedPositions[i] = positions[i] + velocities[i] * 1 / 120f;
 		});
 		
 		// Update spatial lookup with predicted positions;
@@ -123,6 +125,13 @@ public class FluidSimulation : MonoBehaviour
 			Vector3 pressureForce = CalculatePressureForce(i);
 			Vector3 pressureAcceleration = pressureForce / densities[i];
 			velocities[i] += pressureAcceleration * deltaTime;
+		});
+		
+		// Calculate viscosity.
+		Parallel.For(0, numParticles, i =>
+		{
+			Vector3 viscosityForce = CalculateViscosityForce(i);
+			velocities[i] += viscosityForce * deltaTime;
 		});
 		
 		// Calculate new positions of the particles and resolve collisions.
@@ -150,9 +159,9 @@ public class FluidSimulation : MonoBehaviour
 		
 		_neighbourSearch = new NeighbourSearch(numParticles);
 		
-		const float particleRadius = 0.5f;
+		float particleRadius = particlePrefab.transform.lossyScale.x;
 		
-		int cubeLength = (int)Math.Ceiling(Math.Pow(numParticles, 1.0f / 3.0f)); 
+		int cubeLength = (int)Math.Ceiling(Pow(numParticles, 1.0f / 3.0f)); 
 		float spaceBetweenParticles = particleRadius + 1.0f;
 
 		for (int i = 0; i < numParticles; i++)
@@ -189,20 +198,20 @@ public class FluidSimulation : MonoBehaviour
 		// Pause.
 		if (Input.GetKeyDown(KeyCode.Space))
 		{
-			isPaused = !isPaused;
+			_isPaused = !_isPaused;
 		}
 		
-		// Pause next frame.
+		// Frame by frame.
 		if (Input.GetKeyDown(KeyCode.RightArrow))
 		{
-			isPaused = false;
-			pauseNextFrame = true;
+			_isPaused = false;
+			_pauseNextFrame = true;
 		}
 
 		// Reset simulation.
 		if (Input.GetKeyDown(KeyCode.R))
 		{
-			isPaused = true;
+			_isPaused = true;
 		}
 	}
 
@@ -217,22 +226,22 @@ public class FluidSimulation : MonoBehaviour
 
 		// Calculate distance from box on each axis (negative values are inside box)
 		Vector3 halfSize = new Vector3(0.5f, 0.5f, 0.5f);
-		Vector3 edgeDst = halfSize - new Vector3(Mathf.Abs(posLocal.x), Mathf.Abs(posLocal.y), Mathf.Abs(posLocal.z));
+		Vector3 edgeDst = halfSize - new Vector3(Abs(posLocal.x), Abs(posLocal.y), Abs(posLocal.z));
 
 		// Resolve collisions
 		if (edgeDst.x <= 0)
 		{
-			posLocal.x = halfSize.x * Mathf.Sign(posLocal.x);
+			posLocal.x = halfSize.x * Sign(posLocal.x);
 			velocityLocal.x *= -1 * collisionDamping;
 		}
 		if (edgeDst.y <= 0)
 		{
-			posLocal.y = halfSize.y * Mathf.Sign(posLocal.y);
+			posLocal.y = halfSize.y * Sign(posLocal.y);
 			velocityLocal.y *= -1 * collisionDamping;
 		}
 		if (edgeDst.z <= 0)
 		{
-			posLocal.z = halfSize.z * Mathf.Sign(posLocal.z);
+			posLocal.z = halfSize.z * Sign(posLocal.z);
 			velocityLocal.z *= -1 * collisionDamping;
 		}
 
@@ -251,9 +260,10 @@ public class FluidSimulation : MonoBehaviour
 	{
 		//if (dst > radius) return 0;
 		
-		float volume = (MathF.PI * MathF.Pow(radius, 4)) / 6;
+		float scale = 15 / (2 * PI * Pow(radius, 5));
+		float v = radius - dst;
 		
-		return (radius - dst) * (radius - dst) / volume;
+		return v * v * scale;
 	}
 	
 	/// <summary>
@@ -264,11 +274,17 @@ public class FluidSimulation : MonoBehaviour
 	/// <returns></returns>
 	private float SmoothingKernelDerivative(float dst, float radius)
 	{
-		if (dst >= radius) return 0;
-		
-		float scale = 12 / (MathF.Pow(radius, 4) * MathF.PI);
-		
-		return (dst - radius) * scale;
+		float scale = 15 / (Pow(radius, 5) * PI);
+		float v = radius - dst;
+		return -v * scale;
+	}
+
+	private float ViscositySmoothingKernel(float dst, float radius)
+	{
+		float volume = PI * Pow(radius, 8) / 4;
+		float value = Max(0, radius * radius - dst * dst);
+
+		return value * value * value / volume;
 	}
 	
 	/// <summary>
@@ -314,6 +330,21 @@ public class FluidSimulation : MonoBehaviour
 		}
 		
 		return pressureForce;
+	}
+
+	private Vector3 CalculateViscosityForce(int particleIndex)
+	{
+		Vector3 viscosityForce = Vector3.zero;
+		Vector3 position = positions[particleIndex];
+
+		foreach (int otherIndex in _neighbourSearch.ForeachPointWithinRadius(position))
+		{
+			float dst = (position - positions[otherIndex]).magnitude;
+			float influence = ViscositySmoothingKernel(dst, smoothingRadius);
+			viscosityForce += (velocities[otherIndex] - velocities[particleIndex]) * influence;
+		}
+
+		return viscosityForce * viscosityStrength;
 	}
 	
 	/// <summary>
