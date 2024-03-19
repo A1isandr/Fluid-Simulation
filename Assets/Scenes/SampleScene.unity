@@ -319,7 +319,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ae7b5fee7c7be49498597a57bf8992ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  numParticles: 600
+  numParticles: 500
   timeScale: 1
   fixedTimeStep: 1
   iterationsPerFrame: 2
@@ -327,19 +327,19 @@ MonoBehaviour:
   smoothingRadius: 0.3
   targetDensity: 5
   pressureMultiplier: 20
+  nearPressureMultiplier: 1
   viscosityStrength: 0.2
-  mass: 1
   collisionDamping: 0.5
-  spawnPoint: {fileID: 1326973433}
   particlePrefab: {fileID: 1963545023058113029, guid: 8f3fdc2e575113540b7efb708976dc44,
     type: 3}
   displayNeighbourSearchGrid: 0
   displaySmoothingRadius: 0
+  gridColor: {r: 1, g: 0, b: 0.67058825, a: 1}
+  radiusColor: {r: 1, g: 1, b: 1, a: 1}
   particles: []
   velocities: []
   positions: []
   predictedPositions: []
-  densities: []
 --- !u!4 &1155063205
 Transform:
   m_ObjectHideFlags: 0
@@ -352,40 +352,8 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 5.1411886, y: 4.1131124, z: 4.167324}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 1326973433}
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1326973432
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1326973433}
-  m_Layer: 0
-  m_Name: SpawnPoint
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1326973433
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1326973432}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1155063205}
+  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1342939101
 GameObject:

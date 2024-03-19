@@ -1,9 +1,6 @@
 using System;
 using System.Threading.Tasks;
-using Unity.Mathematics;
 using UnityEngine;
-using UnityEngine.EventSystems;
-using UnityEngine.Serialization;
 using Quaternion = UnityEngine.Quaternion;
 using Random = System.Random;
 using Vector3 = UnityEngine.Vector3;
@@ -23,24 +20,25 @@ public class FluidSimulation : MonoBehaviour
 	[SerializeField] private float smoothingRadius = 0.5f;
 	[SerializeField] private float targetDensity = 5f;
 	[SerializeField] private float pressureMultiplier = 30f;
+	[SerializeField] private float nearPressureMultiplier = 1f;
 	[SerializeField] private float viscosityStrength = 0.5f;
-	[SerializeField] private float mass = 1f;
 	[Range(0, 1)] [SerializeField] private float collisionDamping = 0.95f;
 	
 	[Header("References")]
-	[SerializeField] private Transform spawnPoint;
 	[SerializeField] private GameObject particlePrefab;
 
 	[Header("Debug")]
 	[SerializeField] private bool displayNeighbourSearchGrid;
 	[SerializeField] private bool displaySmoothingRadius;
+	[SerializeField] private Color gridColor = Color.yellow;
+	[SerializeField] private Color radiusColor = Color.red;
 	
 	[Header("Debug Info")]
 	[SerializeField] private GameObject[] particles;
 	[SerializeField] private Vector3[] velocities;
 	[SerializeField] private Vector3[] positions;
 	[SerializeField] private Vector3[] predictedPositions;
-	[SerializeField] private float[] densities;
+	private (float density, float nearDensity)[] _densities;
 	
 	private NeighbourSearch _neighbourSearch;
 	
@@ -116,14 +114,14 @@ public class FluidSimulation : MonoBehaviour
 		// Calculate densities.
 		Parallel.For(0, numParticles, i =>
 		{
-			densities[i] = CalculateDensity(predictedPositions[i]);
+			_densities[i] = CalculateDensity(predictedPositions[i]);
 		});
 		
 		// Calculate and apply pressure forces.
 		Parallel.For(0, numParticles, i =>
 		{
 			Vector3 pressureForce = CalculatePressureForce(i);
-			Vector3 pressureAcceleration = pressureForce / densities[i];
+			Vector3 pressureAcceleration = pressureForce / _densities[i].density;
 			velocities[i] += pressureAcceleration * deltaTime;
 		});
 		
@@ -155,7 +153,7 @@ public class FluidSimulation : MonoBehaviour
 		velocities = new Vector3[numParticles];
 		positions = new Vector3[numParticles];
 		predictedPositions = new Vector3[numParticles];
-		densities = new float[numParticles];
+		_densities = new (float density, float nearDensity)[numParticles];
 		
 		_neighbourSearch = new NeighbourSearch(numParticles);
 		
@@ -167,10 +165,10 @@ public class FluidSimulation : MonoBehaviour
 		for (int i = 0; i < numParticles; i++)
 		{
 			float x = (i % cubeLength - cubeLength / 2f) * spaceBetweenParticles;
-			float y = ((i / cubeLength) % cubeLength - cubeLength / 2f) * spaceBetweenParticles;
+			float y = (i / cubeLength % cubeLength - cubeLength / 2f) * spaceBetweenParticles;
 			float z = (i / (cubeLength * cubeLength) - cubeLength / 2f) * spaceBetweenParticles;
 
-			positions[i] = new Vector3(x, y, z) + spawnPoint.position;
+			positions[i] = new Vector3(x, y, z);
 			particles[i] = Instantiate(particlePrefab, positions[i], Quaternion.identity);
 		};
 		
@@ -178,7 +176,7 @@ public class FluidSimulation : MonoBehaviour
 
 		Parallel.For(0, numParticles, i =>
 		{
-			densities[i] = CalculateDensity(positions[i]);
+			_densities[i] = CalculateDensity(positions[i]);
 		});
 	}
 	
@@ -256,7 +254,7 @@ public class FluidSimulation : MonoBehaviour
 	/// <param name="radius"></param>
 	/// <param name="dst"></param>
 	/// <returns></returns>
-	private float SmoothingKernel(float dst, float radius)
+	private float DensitySmoothingKernel(float dst, float radius)
 	{
 		//if (dst > radius) return 0;
 		
@@ -272,13 +270,45 @@ public class FluidSimulation : MonoBehaviour
 	/// <param name="dst"></param>
 	/// <param name="radius"></param>
 	/// <returns></returns>
-	private float SmoothingKernelDerivative(float dst, float radius)
+	private float DensitySmoothingKernelDerivative(float dst, float radius)
 	{
 		float scale = 15 / (Pow(radius, 5) * PI);
 		float v = radius - dst;
 		return -v * scale;
 	}
-
+	
+	/// <summary>
+	/// 
+	/// </summary>
+	/// <param name="dst"></param>
+	/// <param name="radius"></param>
+	/// <returns></returns>
+	private float NearDensitySmoothingKernel(float dst, float radius)
+	{
+		float scale = 15 / (PI * Pow(radius, 6));
+		float v = radius - dst;
+		return v * v * v * scale;
+	}
+	
+	/// <summary>
+	/// 
+	/// </summary>
+	/// <param name="dst"></param>
+	/// <param name="radius"></param>
+	/// <returns></returns>
+	private float NearDensitySmoothingKernelDerivative(float dst, float radius)
+	{
+		float scale = 45 / (Pow(radius, 6) * PI);
+		float v = radius - dst;
+		return -v * v * scale;
+	}
+	
+	/// <summary>
+	/// 
+	/// </summary>
+	/// <param name="dst"></param>
+	/// <param name="radius"></param>
+	/// <returns></returns>
 	private float ViscositySmoothingKernel(float dst, float radius)
 	{
 		float volume = PI * Pow(radius, 8) / 4;
@@ -292,18 +322,22 @@ public class FluidSimulation : MonoBehaviour
 	/// </summary>
 	/// <param name="samplePoint"></param>
 	/// <returns>Density</returns>
-	private float CalculateDensity(Vector3 samplePoint)
+	private (float, float) CalculateDensity(Vector3 samplePoint)
 	{
 		float density = 0;
+		float nearDensity = 0;
 
 		foreach (var index in _neighbourSearch.ForeachPointWithinRadius(samplePoint))
 		{
 			float dst = (positions[index] - samplePoint).magnitude;
-			float influence = SmoothingKernel(dst, smoothingRadius);
-			density += mass * influence;
+			float influence = DensitySmoothingKernel(dst, smoothingRadius);
+			float nearInfluence = NearDensitySmoothingKernel(dst, smoothingRadius);
+			
+			density += influence;
+			nearDensity += nearInfluence;
 		}
 		
-		return density;
+		return (density, nearDensity);
 	}
 	
 	/// <summary>
@@ -323,10 +357,15 @@ public class FluidSimulation : MonoBehaviour
 			float dst = offset.magnitude;
 			Vector3 dir = dst == 0 ? GetRandomDir() : offset / dst;
 			
-			float slope = SmoothingKernelDerivative(dst, smoothingRadius);
-			float density = densities[index];
-			float sharedPressure = CalculateSharedPressure(density, densities[particleIndex]);
-			pressureForce += dir * (sharedPressure * slope * mass) / density;
+			float slope = DensitySmoothingKernelDerivative(dst, smoothingRadius);
+			float nearSlope = NearDensitySmoothingKernelDerivative(dst, smoothingRadius);
+			
+			var densities = _densities[index];
+			
+			(float sharedPressure, float nearSharedPressure) = CalculateSharedPressure(densities, _densities[particleIndex]);
+			
+			pressureForce += dir * (sharedPressure * slope) / densities.density;
+			pressureForce += dir * (nearSharedPressure * nearSlope) / densities.nearDensity;
 		}
 		
 		return pressureForce;
@@ -346,32 +385,34 @@ public class FluidSimulation : MonoBehaviour
 
 		return viscosityForce * viscosityStrength;
 	}
-	
-	/// <summary>
-	/// Converts density to pressure at point in space.
-	/// </summary>
-	/// <param name="density"></param>
-	/// <returns>Pressure</returns>
-	private float ConvertDensityToPressure(float density)
-	{
-		float densityError = density - targetDensity;
-		float pressure = densityError * pressureMultiplier;
-
-		return pressure;
-	}
 
 	/// <summary>
 	/// Calculates shared pressure acting on two points in space.
 	/// </summary>
-	/// <param name="densityA"></param>
-	/// <param name="densityB"></param>
+	/// <param name="densitiesA"></param>
+	/// <param name="densitiesB"></param>
 	/// <returns>Shared pressure</returns>
-	private float CalculateSharedPressure(float densityA, float densityB)
+	private (float, float) CalculateSharedPressure((float density, float nearDensity) densitiesA, (float density, float nearDensity) densitiesB)
 	{
-		float pressureA = ConvertDensityToPressure(densityA);
-		float pressureB = ConvertDensityToPressure(densityB);
+		(float pressureA, float nearPressureA) = ConvertDensityToPressure(densitiesA.density, densitiesA.nearDensity);
+		(float pressureB, float nearPressureB) = ConvertDensityToPressure(densitiesB.density, densitiesB.nearDensity);
 
-		return (pressureA + pressureB) / 2;
+		return ((pressureA + pressureB) / 2, nearPressureA + nearPressureB / 2);
+	}
+
+	/// <summary>
+	/// Converts density to pressure at point in space.
+	/// </summary>
+	/// <param name="density"></param>
+	/// <param name="nearDensity"></param>
+	/// <returns>Pressure</returns>
+	private (float, float) ConvertDensityToPressure(float density, float nearDensity)
+	{
+		float densityError = density - targetDensity;
+		float pressure = densityError * pressureMultiplier;
+		float nearPressure = nearDensity * nearPressureMultiplier;
+
+		return (pressure, nearPressure);
 	}
 	
 	/// <summary>
@@ -410,13 +451,13 @@ public class FluidSimulation : MonoBehaviour
 		{
 			if (displayNeighbourSearchGrid)
 			{
-				Gizmos.color = Color.yellow;
-				Gizmos.DrawWireCube(_neighbourSearch.cellsCoord[i], new Vector3(smoothingRadius, smoothingRadius, smoothingRadius));
+				Gizmos.color = gridColor;
+				Gizmos.DrawWireCube(_neighbourSearch.cellsCoord[i] * smoothingRadius, new Vector3(smoothingRadius, smoothingRadius, smoothingRadius));
 			}
 
 			if (displaySmoothingRadius)
 			{
-				Gizmos.color = Color.red;
+				Gizmos.color = radiusColor;
 				Gizmos.DrawWireSphere(positions[i], smoothingRadius);
 			}
 		}
