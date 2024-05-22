@@ -9,31 +9,31 @@ using static UnityEngine.Mathf;
 
 public class FluidSimulation : MonoBehaviour
 {
-	[Header("General Settings")]
+	[Header("Общие настройки")]
 	[SerializeField] private int numParticles = 5;
 	
-	[Header("Simulation Settings")]
-	[SerializeField] private float timeScale = 1;
-	[SerializeField] private bool fixedTimeStep;
-	[SerializeField] private int iterationsPerFrame = 2;
-	[SerializeField] private float gravity = 9.81f;
-	[SerializeField] private float smoothingRadius = 0.5f;
-	[SerializeField] private float targetDensity = 5f;
-	[SerializeField] private float pressureMultiplier = 30f;
-	[SerializeField] private float nearPressureMultiplier = 1f;
-	[SerializeField] private float viscosityStrength = 0.5f;
-	[Range(0, 1)] [SerializeField] private float collisionDamping = 0.95f;
+	[Header("Настройки симуляции")]
+	[SerializeField] private float timeScale = 1; // скорость симуляции.
+	[SerializeField] private bool fixedTimeStep; // переменная, показывающая, находится ли симуляция в режиме фиксированного временного промежутка.
+	[SerializeField] private int iterationsPerFrame = 2; // 
+	[SerializeField] private float gravity = 9.81f; // сила притяжения.
+	[SerializeField] private float smoothingRadius = 0.5f; // "радиус сглаживания", используется в расчетах.
+	[SerializeField] private float targetDensity = 5f; // плотность, к которой будет стремиться симуляция.
+	[SerializeField] private float pressureMultiplier = 30f; // множитель давления, используется в расчетах.
+	[SerializeField] private float nearPressureMultiplier = 1f; // множитель "ближайшего" давления, использутся в расчетах.
+	[SerializeField] private float viscosityStrength = 0.5f; // вязкость.
+	[Range(0, 1)] [SerializeField] private float collisionDamping = 0.5f; // коэффиуиент поглощения энергии при столкновении со стенками сосуда.
 	
-	[Header("References")]
+	[Header("Ресурсы")]
 	[SerializeField] private GameObject particlePrefab;
 
-	[Header("Debug")]
+	[Header("Отладка")]
 	[SerializeField] private bool displayNeighbourSearchGrid;
 	[SerializeField] private bool displaySmoothingRadius;
 	[SerializeField] private Color gridColor = Color.yellow;
 	[SerializeField] private Color radiusColor = Color.red;
 	
-	[Header("Debug Info")]
+	[Header("Отладочная информация")]
 	[SerializeField] private GameObject[] particles;
 	[SerializeField] private Vector3[] velocities;
 	[SerializeField] private Vector3[] positions;
@@ -42,7 +42,7 @@ public class FluidSimulation : MonoBehaviour
 	
 	private NeighbourSearch _neighbourSearch;
 	
-	// State.
+	// Состояние симуляуии.
 	private bool _isPaused;
 	private bool _pauseNextFrame;
 
@@ -56,7 +56,7 @@ public class FluidSimulation : MonoBehaviour
 	
 	void FixedUpdate()
 	{
-		// Run simulation if in fixed time step mode.
+		// Симуляуия в режиме фиксированного верменного промежутка.
 		if (fixedTimeStep)
 		{
 			RunSimulationFrame(Time.fixedDeltaTime);
@@ -65,8 +65,9 @@ public class FluidSimulation : MonoBehaviour
 	
 	private void Update()
 	{
-		// Run simulation if not in fixed time step mode.
-		// (skip running for first few frames as time step can be a lot higher than usual).
+		// Симуляция в режиме плавающего временного промежутка.
+		// (пропускаем первые несколько кадров, по причине того,
+		// что временной промежуток между ними может быть намного больше обычного).
 		if (!fixedTimeStep)
 		{
 			RunSimulationFrame(Time.deltaTime);
@@ -96,28 +97,28 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// Performs simulation step every frame.
+	/// Делает шаг симуляции.
 	/// </summary>
 	/// <param name="deltaTime"></param>
 	private void RunSimulationStep(float deltaTime)
 	{
-		// Apply gravity and predict next positions.
+		// Применяем силу притяжения и "предсказываем" положение частиц.
 		Parallel.For(0, numParticles, i =>
 		{
 			velocities[i] += Vector3.down * (gravity * deltaTime);
 			predictedPositions[i] = positions[i] + velocities[i] * 1 / 120f;
 		});
 		
-		// Update spatial lookup with predicted positions;
+		// Обновляем "пространственный поиск", основываясь на предсказаных положениях частиц.
 		_neighbourSearch.UpdateSpatialLookup(predictedPositions, smoothingRadius);
 		
-		// Calculate densities.
+		// Расчитываем плотности.
 		Parallel.For(0, numParticles, i =>
 		{
 			_densities[i] = CalculateDensity(predictedPositions[i]);
 		});
 		
-		// Calculate and apply pressure forces.
+		// Рассчитываем и применяем силу давления.
 		Parallel.For(0, numParticles, i =>
 		{
 			Vector3 pressureForce = CalculatePressureForce(i);
@@ -125,19 +126,20 @@ public class FluidSimulation : MonoBehaviour
 			velocities[i] += pressureAcceleration * deltaTime;
 		});
 		
-		// Calculate viscosity.
+		// Рассчитываем вязкость.
 		Parallel.For(0, numParticles, i =>
 		{
 			Vector3 viscosityForce = CalculateViscosityForce(i);
 			velocities[i] += viscosityForce * deltaTime;
 		});
 		
-		// Calculate new positions of the particles and resolve collisions.
+		// Рассчитываем новые положения частиц.
 		Parallel.For(0, numParticles, i =>
 		{
 			positions[i] += velocities[i] * deltaTime;
 		});
 		
+		// Обрабатываем коллизии.
 		for (int i = 0; i < numParticles; i++)
 		{
 			ResolveCollisions(i);
@@ -145,7 +147,7 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// Spawns particles.
+	/// Создает частицы.
 	/// </summary>
 	private void SpawnParticles()
 	{
@@ -181,7 +183,7 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// Applies new positions to the particles.
+	/// Применяет новые положения к частицам.
 	/// </summary>
 	private void DrawParticles()
 	{
@@ -191,22 +193,25 @@ public class FluidSimulation : MonoBehaviour
 		}
 	}
 	
+	/// <summary>
+	/// Обработка пользовательского ввода.
+	/// </summary>
 	void HandleInput()
 	{
-		// Pause.
+		// Пауза.
 		if (Input.GetKeyDown(KeyCode.Space))
 		{
 			_isPaused = !_isPaused;
 		}
 		
-		// Frame by frame.
+		// Покадровая симуляция.
 		if (Input.GetKeyDown(KeyCode.RightArrow))
 		{
 			_isPaused = false;
 			_pauseNextFrame = true;
 		}
 
-		// Reset simulation.
+		// Перезапустить симуляцию.
 		if (Input.GetKeyDown(KeyCode.R))
 		{
 			_isPaused = true;
@@ -214,19 +219,20 @@ public class FluidSimulation : MonoBehaviour
 	}
 
 	/// <summary>
-	/// Resolves particle collision with boundaries of the box.
+	/// Обрабатывает коллизии частиц со стенками сосудов.
 	/// </summary>
 	/// <param name="particleIndex"></param>
 	private void ResolveCollisions(int particleIndex)
 	{
+		// Преобразовываем позицию и скорость частицы в координаты сосуда.
 		Vector3 posLocal = transform.InverseTransformPoint(positions[particleIndex]);
 		Vector3 velocityLocal = transform.InverseTransformDirection(velocities[particleIndex]);
 
-		// Calculate distance from box on each axis (negative values are inside box)
+		// Рассчитываем дистанцию до стенок по каждой из осей.
 		Vector3 halfSize = new Vector3(0.5f, 0.5f, 0.5f);
 		Vector3 edgeDst = halfSize - new Vector3(Abs(posLocal.x), Abs(posLocal.y), Abs(posLocal.z));
 
-		// Resolve collisions
+		// Обрабатываем коллизии.
 		if (edgeDst.x <= 0)
 		{
 			posLocal.x = halfSize.x * Sign(posLocal.x);
@@ -243,13 +249,13 @@ public class FluidSimulation : MonoBehaviour
 			velocityLocal.z *= -1 * collisionDamping;
 		}
 
-		// Transform resolved position/velocity back to world space
+		// Обратно преобразоывваем позиция и скорость частицы в мировые координаты.
 		positions[particleIndex] = transform.TransformPoint(posLocal);
 		velocities[particleIndex] = transform.TransformDirection(velocityLocal);
 	}
 	
 	/// <summary>
-	/// Smoothing kernel.
+	/// Ядро сглаживания для плотности.
 	/// </summary>
 	/// <param name="radius"></param>
 	/// <param name="dst"></param>
@@ -265,7 +271,7 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// Smoothing kernel derivative.
+	/// Производная ядра сглаживания для плотности.
 	/// </summary>
 	/// <param name="dst"></param>
 	/// <param name="radius"></param>
@@ -278,7 +284,7 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// 
+	/// Ядро сглаживания для "ближайшей" плотности.
 	/// </summary>
 	/// <param name="dst"></param>
 	/// <param name="radius"></param>
@@ -291,7 +297,7 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// 
+	/// Производная ядра сглаживания для "ближайшей" плотности.
 	/// </summary>
 	/// <param name="dst"></param>
 	/// <param name="radius"></param>
@@ -304,7 +310,7 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// 
+	/// Ядро сглаживания для вязкости.
 	/// </summary>
 	/// <param name="dst"></param>
 	/// <param name="radius"></param>
@@ -318,10 +324,10 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// Calculates density at given point in space.
+	/// Вычисляет плотность для данной точки в пространстве.
 	/// </summary>
 	/// <param name="samplePoint"></param>
-	/// <returns>Density</returns>
+	/// <returns>Плотность.</returns>
 	private (float, float) CalculateDensity(Vector3 samplePoint)
 	{
 		float density = 0;
@@ -341,10 +347,10 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// Calculates pressure force acting on a given particle.
+	/// Вычисляет давление, действующее на данную чатицу.
 	/// </summary>
 	/// <param name="particleIndex"></param>
-	/// <returns>Pressure force</returns>
+	/// <returns>Давление.</returns>
 	private Vector3 CalculatePressureForce(int particleIndex)
 	{
 		Vector3 pressureForce = Vector3.zero;
@@ -370,7 +376,12 @@ public class FluidSimulation : MonoBehaviour
 		
 		return pressureForce;
 	}
-
+	
+	/// <summary>
+	/// Вычисляет вязкость для данной частицы.
+	/// </summary>
+	/// <param name="particleIndex"></param>
+	/// <returns></returns>
 	private Vector3 CalculateViscosityForce(int particleIndex)
 	{
 		Vector3 viscosityForce = Vector3.zero;
@@ -387,11 +398,11 @@ public class FluidSimulation : MonoBehaviour
 	}
 
 	/// <summary>
-	/// Calculates shared pressure acting on two points in space.
+	/// Вычисляет общее давление, действующее на две точки в пространстве.
 	/// </summary>
 	/// <param name="densitiesA"></param>
 	/// <param name="densitiesB"></param>
-	/// <returns>Shared pressure</returns>
+	/// <returns>Общее давление.</returns>
 	private (float, float) CalculateSharedPressure((float density, float nearDensity) densitiesA, (float density, float nearDensity) densitiesB)
 	{
 		(float pressureA, float nearPressureA) = ConvertDensityToPressure(densitiesA.density, densitiesA.nearDensity);
@@ -401,11 +412,11 @@ public class FluidSimulation : MonoBehaviour
 	}
 
 	/// <summary>
-	/// Converts density to pressure at point in space.
+	/// Преобразует плотность в давление, действующее на точку в пространстве.
 	/// </summary>
 	/// <param name="density"></param>
 	/// <param name="nearDensity"></param>
-	/// <returns>Pressure</returns>
+	/// <returns>Давление.</returns>
 	private (float, float) ConvertDensityToPressure(float density, float nearDensity)
 	{
 		float densityError = density - targetDensity;
@@ -416,9 +427,9 @@ public class FluidSimulation : MonoBehaviour
 	}
 	
 	/// <summary>
-	/// Chooses random direction for particle.
+	/// Выбирает случайное направление для частицы.
 	/// </summary>
-	/// <returns>Random direction.</returns>
+	/// <returns>Случайное направление.</returns>
 	private static Vector3 GetRandomDir()
 	{
 		var rng = new Random();
@@ -437,7 +448,7 @@ public class FluidSimulation : MonoBehaviour
 
 	private void OnDrawGizmos()
 	{
-		// Draw box boundaries.
+		// Отрисовываем границы сосуда.
 		var m = Gizmos.matrix;
 		Gizmos.matrix = transform.localToWorldMatrix;
 		Gizmos.color = new Color(0, 1, 0, 0.5f);
@@ -446,7 +457,7 @@ public class FluidSimulation : MonoBehaviour
 		
 		if (_neighbourSearch is null) return;
 		
-		// Draw neighbour search cells and smoothing radius.
+		// Отрисовываем радиус "сглаживания" и ячейки поиска ближайших соседей.
 		for (int i = 0; i < numParticles; i++)
 		{
 			if (displayNeighbourSearchGrid)
