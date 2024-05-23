@@ -53,7 +53,7 @@ public class NeighbourSearch
     }
 
     /// <summary>
-    /// Defines entry in a spatial lookup array.
+    /// Вхождение в массив пространственного поиска.
     /// </summary>
     /// <param name="ParticleIndex"></param>
     /// <param name="CellKey"></param>
@@ -68,31 +68,31 @@ public class NeighbourSearch
     }
     
     /// <summary>
-    /// Iterates trough all neighbours of given point in space.
+    /// Перебирает всех соседей данной точки в пространстве.
     /// </summary>
     /// <param name="samplePoint"></param>
     public IEnumerable<int> ForeachPointWithinRadius(Vector3 samplePoint)
     {
-        // Find which cell the sample point is in (this will be the centre of 3x3x3 block).
+        // Находим в какой ячейке располагается данная точка (центр куба 3x3x3).
         (int centreX, int centreY, int centreZ) = PositionToCellCoord(samplePoint, _radius);
         float sqrRadius = _radius * _radius;
         
-        // Loop over all cells of the 3x3x3 block around the centre cell.
+        // Проходимся по всем ячейкам куба 3x3x3 вокруг центральной.
         foreach ((int offsetX, int offsetY, int offsetZ) in _cellOffsets)
         {
-            // Get key of current cell, then loop over all points that share that key.
+            // Получаем ключ текущей ячейки, затем проходимся по всем точкам, имеющим такой же ключ.
             uint key = GetKeyFromHash(HashCell(centreX + offsetX, centreY + offsetY, centreZ + offsetZ));
             int cellStartIndex = _startIndices[key];
 
             for (int i = cellStartIndex; i < _spatialLookup.Length; i++)
             {
-                // Exit loop if we`re no longer looking at the correct cell.
+                // Выходим из цикла, если точка в не нужной нам ячейке.
                 if (_spatialLookup[i].CellKey != key) break;
 
                 int particleIndex = _spatialLookup[i].ParticleIndex;
                 float sqrDst = (_points[particleIndex] - samplePoint).sqrMagnitude;
                 
-                // Test if the point is inside the radius.
+                // Лежит ли точка в пределах радиуса.
                 if (sqrDst <= sqrRadius)
                 {
                     yield return particleIndex;
@@ -102,7 +102,7 @@ public class NeighbourSearch
     }
     
     /// <summary>
-    /// Updates spatial lookup.
+    /// Обновляет пространственный поиск.
     /// </summary>
     /// <param name="points"></param>
     /// <param name="radius"></param>
@@ -111,20 +111,20 @@ public class NeighbourSearch
         _points = points;
         _radius = radius;
         
-        // Create (unordered) spatial lookup.
+        // Создаем (несортированный) пространственный поиск.
         Parallel.For(0, points.Length, i =>
         {
             (int cellX, int cellY, int cellZ) = PositionToCellCoord(points[i], radius);
             cellsCoord[i] = new Vector3(cellX, cellY, cellZ);
             uint cellKey = GetKeyFromHash(HashCell(cellX, cellY, cellZ));
             _spatialLookup[i] = new Entry(i, cellKey);
-            _startIndices[i] = int.MaxValue; // Reset start index.
+            _startIndices[i] = int.MaxValue; // Сбрасываем стартовый индекс.
         });
 		
-        // Sort by cell key.
+        // Сортируем по ключу ячейки.
         Array.Sort(_spatialLookup);
         
-        // Calculate start indices of each unique cell key in the spatial lookup.
+        // Рассчитываем начальный индекс для каждой уникальной ячейки в пространственном поиске.
         Parallel.For(0, points.Length, i =>
         {
             uint key = _spatialLookup[i].CellKey;
@@ -138,11 +138,11 @@ public class NeighbourSearch
     }
     
     /// <summary>
-    /// Converts point position to cell coord it is within.
+    /// Конвертирует положение точки в координаты ячейки, в которой она раполагается.
     /// </summary>
     /// <param name="point"></param>
     /// <param name="radius"></param>
-    /// <returns>Cell coord.</returns>
+    /// <returns>Координаты ячейки.</returns>
     private (int x, int y, int z) PositionToCellCoord(Vector3 point, float radius)
     {
         int cellX = (int)(point.x / radius);
@@ -153,12 +153,12 @@ public class NeighbourSearch
     }
     
     /// <summary>
-    /// Generates hash based on cell coord.
+    /// Генерирует хэш, основываясь на координатах ячейки.
     /// </summary>
     /// <param name="cellX"></param>
     /// <param name="cellY"></param>
     /// <param name="cellZ"></param>
-    /// <returns>Cell's hash.</returns>
+    /// <returns>Хэш ячейки.</returns>
     private uint HashCell(int cellX, int cellY, int cellZ)
     {
         uint a = (uint)cellX * 15823;
@@ -169,7 +169,7 @@ public class NeighbourSearch
     }
     
     /// <summary>
-    /// Gets key from cell's hash.
+    /// Достает ключ ячейки из ее хэша.
     /// </summary>
     /// <param name="hash"></param>
     /// <returns>Cell's key.</returns>

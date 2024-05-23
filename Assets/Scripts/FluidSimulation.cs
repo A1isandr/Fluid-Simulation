@@ -10,7 +10,7 @@ using static UnityEngine.Mathf;
 public class FluidSimulation : MonoBehaviour
 {
 	[Header("Общие настройки")]
-	[SerializeField] private int numParticles = 5;
+	[SerializeField] private int numParticles = 500; // количество частиц.
 	
 	[Header("Настройки симуляции")]
 	[SerializeField] private float timeScale = 1; // скорость симуляции.
@@ -99,7 +99,7 @@ public class FluidSimulation : MonoBehaviour
 	/// <summary>
 	/// Делает шаг симуляции.
 	/// </summary>
-	/// <param name="deltaTime"></param>
+	/// <param name="deltaTime">Промежуток времени между двумя кадрами.</param>
 	private void RunSimulationStep(float deltaTime)
 	{
 		// Применяем силу притяжения и "предсказываем" положение частиц.
@@ -219,7 +219,7 @@ public class FluidSimulation : MonoBehaviour
 	}
 
 	/// <summary>
-	/// Обрабатывает коллизии частиц со стенками сосудов.
+	/// Обрабатывает коллизии частиц со стен ками сосудов.
 	/// </summary>
 	/// <param name="particleIndex"></param>
 	private void ResolveCollisions(int particleIndex)
@@ -249,7 +249,7 @@ public class FluidSimulation : MonoBehaviour
 			velocityLocal.z *= -1 * collisionDamping;
 		}
 
-		// Обратно преобразоывваем позиция и скорость частицы в мировые координаты.
+		// Обратно преобразовываем позицию и скорость частицы в мировые координаты.
 		positions[particleIndex] = transform.TransformPoint(posLocal);
 		velocities[particleIndex] = transform.TransformDirection(velocityLocal);
 	}
